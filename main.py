@@ -4,6 +4,7 @@ import os
 import random
 import re
 from aiohttp import web
+import requests
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -38,6 +39,18 @@ def decode_data(encoded_str):
   return None, None, None
 
 
+# --- TinyURL দিয়ে লিংক শর্ট করার অটোমেটিক ফাংশন ---
+def make_tiny_url(long_url):
+  try:
+    api_url = f"https://tinyurl.com/api-create.php?url={long_url}"
+    res = requests.get(api_url, timeout=5)
+    if res.status_code == 200 and res.text.startswith("http"):
+      return res.text.strip()
+  except Exception as e:
+    print(f"TinyURL error: {e}")
+  return long_url
+
+
 # --- স্টার্ট ও মেইন মেনু ---
 @bot.message_handler(commands=["start", "help"])
 def send_welcome(message):
@@ -58,8 +71,10 @@ def send_welcome(message):
   welcome_text = (
       "🌐 **AdShare Global Link Tools**\n\n"
       "Choose an option below to format and optimize your links:\n\n"
-      "• **Clean Link Shortener:** Convert any media/file link into a clean, fast-sharing link.\n"
-      "• **Custom Ad Link:** Attach your own ad/monetization URL with your media link."
+      "• **Clean Link Shortener:** Convert any media/file link into a clean,"
+      " fast-sharing link.\n"
+      "• **Custom Ad Link:** Attach your own ad/monetization URL with your media"
+      " link."
   )
   bot.send_message(
       chat_id, welcome_text, parse_mode="Markdown", reply_markup=markup
@@ -103,7 +118,8 @@ def process_message(message):
   if not urls:
     bot.reply_to(
         message,
-        "❌ **Invalid Link!** Please send a valid URL starting with `http://` or `https://`.",
+        "❌ **Invalid Link!** Please send a valid URL starting with `http://` or"
+        " `https://`.",
         parse_mode="Markdown",
     )
     return
@@ -111,10 +127,11 @@ def process_message(message):
   input_url = urls[0]
   state = user_states.get(chat_id, {})
 
-  # --- Clean Link Handler (কোনো অ্যাড থাকবে না) ---
+  # --- Clean Link Handler ---
   if state.get("mode") == "clean":
     encoded = encode_data("clean", "none", input_url)
-    short_link = f"{SERVER_URL}/go?data={encoded}"
+    raw_link = f"{SERVER_URL}/go?data={encoded}"
+    short_link = make_tiny_url(raw_link)  # ছোট লিংক জেনারেট করা
 
     reply_msg = (
         "✅ **Your Clean Link is Ready!**\n\n"
@@ -132,7 +149,8 @@ def process_message(message):
       bot.reply_to(
           message,
           "✅ **Destination URL Saved!**\n\n"
-          "🎯 **Step 2 of 2:** Now send your **Monetization / Ad Direct Link**:",
+          "🎯 **Step 2 of 2:** Now send your **Monetization / Ad Direct"
+          " Link**:",
           parse_mode="Markdown",
       )
 
@@ -141,12 +159,13 @@ def process_message(message):
       user_ad = input_url
 
       encoded = encode_data("custom", user_ad, dest_url)
-      short_link = f"{SERVER_URL}/go?data={encoded}"
+      raw_link = f"{SERVER_URL}/go?data={encoded}"
+      short_link = make_tiny_url(raw_link)  # ছোট লিংক জেনারেট করা
 
       reply_msg = (
           "🎉 **Your Custom Ad Link is Live!**\n\n"
           f"🔗 **Short Link:**\n`{short_link}`\n\n"
-          " Share this link anywhere to direct users to your content and ad!"
+          "Share this link anywhere to direct users to your content and ad!"
       )
       bot.reply_to(message, reply_msg, parse_mode="Markdown")
       user_states[chat_id] = {}
@@ -176,7 +195,7 @@ async def redirect_engine(request):
   if not dest_url:
     return web.Response(text="Invalid or Expired Link!", status=400)
 
-  # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি মূল ফাইলে রিডাইরেক্ট (কোনো অ্যাড নেই)
+  # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি মূল ফাইলে রিডাইরেক্ট (কোনো পেজ নেই)
   if mode == "clean":
     raise web.HTTPFound(location=dest_url)
 
