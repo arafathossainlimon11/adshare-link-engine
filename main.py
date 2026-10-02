@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import os
-import random
 import re
 from aiohttp import web
 import requests
@@ -18,13 +17,14 @@ SERVER_URL = os.environ.get(
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ইউজার সেশন স্টেট সেভ রাখার জন্য
+# ইউজার সেশন ও লিংক সংখ্যা ট্র্যাকার (User ID ভিত্তিক)
 user_states = {}
+user_link_counts = {}
 
 
 # --- Base64 এনকোড ও ডিকোড হেল্পার ---
-def encode_data(mode, user_ad, dest_url):
-  raw_str = f"{mode}|||{user_ad}|||{dest_url}"
+def encode_data(mode, chosen_ad, dest_url):
+  raw_str = f"{mode}|||{chosen_ad}|||{dest_url}"
   return base64.urlsafe_b64encode(raw_str.encode()).decode()
 
 
@@ -39,7 +39,7 @@ def decode_data(encoded_str):
   return None, None, None
 
 
-# --- TinyURL দিয়ে লিংক শর্ট করার অটোমেটিক ফাংশন ---
+# --- TinyURL অটোমেটিক শর্টনার ---
 def make_tiny_url(long_url):
   try:
     api_url = f"https://tinyurl.com/api-create.php?url={long_url}"
@@ -131,7 +131,7 @@ def process_message(message):
   if state.get("mode") == "clean":
     encoded = encode_data("clean", "none", input_url)
     raw_link = f"{SERVER_URL}/go?data={encoded}"
-    short_link = make_tiny_url(raw_link)  # ছোট লিংক জেনারেট করা
+    short_link = make_tiny_url(raw_link)
 
     reply_msg = (
         "✅ **Your Clean Link is Ready!**\n\n"
@@ -158,9 +158,19 @@ def process_message(message):
       dest_url = state.get("dest_url")
       user_ad = input_url
 
-      encoded = encode_data("custom", user_ad, dest_url)
+      # ইউজার অনুযায়ী লিংক গণনার লজিক
+      current_count = user_link_counts.get(chat_id, 0) + 1
+      user_link_counts[chat_id] = current_count
+
+      # ১ম লিংকে ইউজারের অ্যাড, ২য়/৩য়/৪র্থ লিংকে ওনারের (আপনার) অ্যাড
+      if current_count == 1:
+        selected_ad = user_ad
+      else:
+        selected_ad = OWNER_AD_LINK
+
+      encoded = encode_data("custom", selected_ad, dest_url)
       raw_link = f"{SERVER_URL}/go?data={encoded}"
-      short_link = make_tiny_url(raw_link)  # ছোট লিংক জেনারেট করা
+      short_link = make_tiny_url(raw_link)
 
       reply_msg = (
           "🎉 **Your Custom Ad Link is Live!**\n\n"
@@ -176,7 +186,7 @@ def process_message(message):
     )
 
 
-# --- Web Redirect Engine ---
+# --- Web Redirect Engine (সরাসরি ৩০২ ডাইরেক্ট রিডাইরেক্ট, কোনো ওয়েব পেজ নেই) ---
 routes = web.RouteTableDef()
 
 
@@ -190,52 +200,17 @@ async def home(request):
 @routes.get("/go")
 async def redirect_engine(request):
   data = request.query.get("data", "")
-  mode, user_ad, dest_url = decode_data(data)
+  mode, chosen_ad, dest_url = decode_data(data)
 
   if not dest_url:
     return web.Response(text="Invalid or Expired Link!", status=400)
 
-  # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি মূল ফাইলে রিডাইরেক্ট (কোনো পেজ নেই)
+  # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি মূল ফাইলে রিডাইরেক্ট
   if mode == "clean":
     raise web.HTTPFound(location=dest_url)
 
-  # ২. কাস্টম অ্যাড লিংকের ক্ষেত্রে ৫০-৫০ র‍্যান্ডম অ্যাড রোটেশন
-  chosen_ad = random.choice([OWNER_AD_LINK, user_ad])
-
-  html_content = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Access Content</title>
-        <style>
-            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }}
-            .card {{ background: #1e293b; border: 1px solid #334155; max-width: 400px; width: 100%; padding: 30px 20px; border-radius: 16px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }}
-            h2 {{ color: #38bdf8; font-size: 20px; margin-bottom: 10px; }}
-            p {{ color: #94a3b8; font-size: 14px; line-height: 1.5; margin-bottom: 20px; }}
-            .btn {{ display: block; width: 100%; background: #2563eb; color: #ffffff; padding: 14px; font-size: 16px; font-weight: 600; border-radius: 10px; text-decoration: none; border: none; cursor: pointer; transition: 0.2s; }}
-            .btn:hover {{ background: #1d4ed8; }}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h2>🔓 File Access Ready</h2>
-            <p>Click below to proceed to your file destination.</p>
-            <button id="actionBtn" class="btn">Continue to Destination</button>
-        </div>
-
-        <script>
-            document.getElementById('actionBtn').addEventListener('click', function() {{
-                window.open("{chosen_ad}", "_blank");
-                window.location.href = "{dest_url}";
-            }});
-        </script>
-    </body>
-    </html>
-    """
-  return web.Response(text=html_content, content_type="text/html")
+  # ২. কাস্টম অ্যাড লিংকের ক্ষেত্রে সরাসরি ৩০২ ডাইরেক্ট রিডাইরেক্ট (কোনো মধ্যবর্তী পেজ ছাড়াই)
+  raise web.HTTPFound(location=chosen_ad)
 
 
 def run_bot():
