@@ -34,7 +34,7 @@ def generate_short_code():
       return code
 
 
-# --- মেনু বাটন তৈরি করার ফাংশন ---
+# --- মেনু বাটন তৈরির ফাংশন ---
 def get_main_menu_markup():
   markup = InlineKeyboardMarkup()
   btn_clean = InlineKeyboardButton(
@@ -63,7 +63,7 @@ def get_after_action_markup():
 @bot.message_handler(commands=["start", "help"])
 def send_welcome(message):
   chat_id = message.chat.id
-  user_states[chat_id] = {}  # Reset state
+  user_states[chat_id] = {}
 
   welcome_text = (
       "🌐 **AdShare Global Link Tools**\n\n"
@@ -179,7 +179,6 @@ def process_message(message):
       dest_url = state.get("dest_url")
       user_ad = input_url
 
-      # ইউজার অনুযায়ী ১ম লিংক ইউজারের অ্যাড, পরবর্তী সব ওনারের (আপনার) অ্যাড
       current_count = user_link_counts.get(chat_id, 0) + 1
       user_link_counts[chat_id] = current_count
 
@@ -217,7 +216,7 @@ def process_message(message):
     )
 
 
-# --- Web Redirect Engine (অটোমেটিক রিডাইরেক্ট) ---
+# --- Web Redirect Engine (Pop-up Blocker Bypass) ---
 routes = web.RouteTableDef()
 
 
@@ -246,7 +245,7 @@ async def redirect_engine(request):
   if mode == "clean":
     raise web.HTTPFound(location=dest_url)
 
-  # ২. কাস্টম অ্যাড লিংক: কোনো বোতামে চাপ দেওয়া ছাড়াই অটোমেটিক ০.৫ সেকেন্ডে রিডাইরেক্ট
+  # ২. কাস্টম অ্যাড লিংক: ১-ক্লিক টাচে ক্রোম পপআপ বাইপাস
   html_content = f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -255,21 +254,43 @@ async def redirect_engine(request):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Redirecting...</title>
         <style>
-            body {{ font-family: sans-serif; background: #0f172a; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }}
-            .loader {{ border: 4px solid #1e293b; border-top: 4px solid #38bdf8; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }}
-            @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background: #0f172a;
+                color: #ffffff;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                margin: 0;
+            }}
+            .btn {{
+                display: inline-block;
+                padding: 16px 32px;
+                font-size: 18px;
+                font-weight: bold;
+                color: #ffffff;
+                background: #2563eb;
+                border-radius: 12px;
+                text-decoration: none;
+                box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+                border: none;
+                cursor: pointer;
+            }}
+            .btn:active {{
+                transform: scale(0.98);
+            }}
         </style>
     </head>
     <body>
-        <div>
-            <div class="loader"></div>
-            <h3>Connecting to Destination...</h3>
-        </div>
+        <a href="#" id="goBtn" class="btn">Click Here to Continue 🚀</a>
+
         <script>
-            setTimeout(function() {{
+            document.getElementById('goBtn').addEventListener('click', function(e) {{
+                e.preventDefault();
                 window.open('{chosen_ad}', '_blank');
                 window.location.href = '{dest_url}';
-            }}, 500);
+            }});
         </script>
     </body>
     </html>
@@ -277,15 +298,14 @@ async def redirect_engine(request):
   return web.Response(text=html_content, content_type="text/html")
 
 
-# --- সার্ভার ২৪ ঘণ্টা চালু রাখার অটো-পিং ফাংশন (Keep-Alive) ---
+# --- সার্ভার ২৪ ঘণ্টা চালু রাখার অটো-পিং ফাংশন ---
 async def keep_alive():
   while True:
-    await asyncio.sleep(500)  # প্রতি ৮ মিনিটে অটো পিং পাঠাবে
+    await asyncio.sleep(500)
     try:
       requests.get(SERVER_URL, timeout=5)
-      print(">>> Keep-alive self-ping successful <<<")
-    except Exception as e:
-      print(f"Keep-alive ping error: {e}")
+    except Exception:
+      pass
 
 
 def run_bot():
@@ -296,7 +316,7 @@ def run_bot():
 
 async def start_background_tasks(app):
   asyncio.create_task(asyncio.to_thread(run_bot))
-  asyncio.create_task(keep_alive())  # কিপ-এলাইভ শুরু
+  asyncio.create_task(keep_alive())
 
 
 app = web.Application()
