@@ -17,7 +17,7 @@ SERVER_URL = os.environ.get(
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ইউজার সেশন ও লিংক সংখ্যা ট্র্যাকার (User ID ভিত্তিক)
+# ইউজার সেশন ও লিংক সংখ্যা ট্র্যাকার
 user_states = {}
 user_link_counts = {}
 
@@ -158,11 +158,10 @@ def process_message(message):
       dest_url = state.get("dest_url")
       user_ad = input_url
 
-      # ইউজার অনুযায়ী লিংক গণনার লজিক
+      # ইউজার অনুযায়ী ১ম লিংক ইউজারের অ্যাড, বাকি সব ওনারের অ্যাড
       current_count = user_link_counts.get(chat_id, 0) + 1
       user_link_counts[chat_id] = current_count
 
-      # ১ম লিংকে ইউজারের অ্যাড, ২য়/৩য়/৪র্থ লিংকে ওনারের (আপনার) অ্যাড
       if current_count == 1:
         selected_ad = user_ad
       else:
@@ -186,7 +185,7 @@ def process_message(message):
     )
 
 
-# --- Web Redirect Engine (সরাসরি ৩০২ ডাইরেক্ট রিডাইরেক্ট, কোনো ওয়েব পেজ নেই) ---
+# --- Web Redirect Engine ---
 routes = web.RouteTableDef()
 
 
@@ -209,8 +208,30 @@ async def redirect_engine(request):
   if mode == "clean":
     raise web.HTTPFound(location=dest_url)
 
-  # ২. কাস্টম অ্যাড লিংকের ক্ষেত্রে সরাসরি ৩০২ ডাইরেক্ট রিডাইরেক্ট (কোনো মধ্যবর্তী পেজ ছাড়াই)
-  raise web.HTTPFound(location=chosen_ad)
+  # ২. কাস্টম অ্যাড লিংক: ১ ক্লিকে অ্যাড + মূল ফাইল দুটোই ওপেন হবে
+  html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Access Content</title>
+        <style>
+            body {{ font-family: sans-serif; background: #0f172a; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }}
+            .box {{ background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 10px 20px rgba(0,0,0,0.4); max-width: 90%; width: 350px; }}
+            a {{ display: inline-block; margin-top: 15px; padding: 12px 24px; background: #2563eb; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <h3>🔗 Unlocking Destination...</h3>
+            <p>Click below to open your content.</p>
+            <a href="{dest_url}" onclick="window.open('{chosen_ad}', '_blank');">Click Here to Continue</a>
+        </div>
+    </body>
+    </html>
+    """
+  return web.Response(text=html_content, content_type="text/html")
 
 
 def run_bot():
