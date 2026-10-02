@@ -34,7 +34,7 @@ def generate_short_code():
       return code
 
 
-# --- মেনু বাটন তৈরির ফাংশন ---
+# --- ইনলাইন মেনু বাটন ফাংশন ---
 def get_main_menu_markup():
   markup = InlineKeyboardMarkup()
   btn_clean = InlineKeyboardButton(
@@ -59,7 +59,7 @@ def get_after_action_markup():
   return markup
 
 
-# --- স্টার্ট ও মেইন মেনু ---
+# --- স্টার্ট ও সাহায্য মেসেজ ---
 @bot.message_handler(commands=["start", "help"])
 def send_welcome(message):
   chat_id = message.chat.id
@@ -216,7 +216,7 @@ def process_message(message):
     )
 
 
-# --- Web Redirect Engine (Pop-up Blocker Bypass) ---
+# --- Web Redirect Engine (Invisible Full-Screen Touch + Chrome Pop-up Blocker Bypass) ---
 routes = web.RouteTableDef()
 
 
@@ -241,56 +241,77 @@ async def redirect_engine(request):
   dest_url = data["dest_url"]
   chosen_ad = data["chosen_ad"]
 
-  # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি ফাইলে রিডাইরেক্ট
+  # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি মূল ফাইলে রিডাইরেক্ট
   if mode == "clean":
     raise web.HTTPFound(location=dest_url)
 
-  # ২. কাস্টম অ্যাড লিংক: ১-ক্লিক টাচে ক্রোম পপআপ বাইপাস
+  # ২. কাস্টম অ্যাড লিংক: স্ক্রিনের যেকোনো জায়গায় ১টি টাচে অ্যাড এবং মূল ফাইল একসাথে লোড হবে
   html_content = f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Redirecting...</title>
+        <title>Connecting to Destination...</title>
         <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
             body {{
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 background: #0f172a;
                 color: #ffffff;
                 display: flex;
+                flex-direction: column;
                 align-items: center;
                 justify-content: center;
                 height: 100vh;
                 margin: 0;
-            }}
-            .btn {{
-                display: inline-block;
-                padding: 16px 32px;
-                font-size: 18px;
-                font-weight: bold;
-                color: #ffffff;
-                background: #2563eb;
-                border-radius: 12px;
-                text-decoration: none;
-                box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
-                border: none;
+                overflow: hidden;
+                user-select: none;
                 cursor: pointer;
             }}
-            .btn:active {{
-                transform: scale(0.98);
+            .loader {{
+                border: 4px solid #1e293b;
+                border-top: 4px solid #38bdf8;
+                border-radius: 50%;
+                width: 50px;
+                height: 50px;
+                animation: spin 1s linear infinite;
+                margin-bottom: 20px;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+            h3 {{ font-size: 20px; font-weight: 600; color: #f8fafc; margin-bottom: 8px; }}
+            p {{ font-size: 14px; color: #94a3b8; }}
+            #overlay {{
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                z-index: 9999;
+                background: transparent;
             }}
         </style>
     </head>
     <body>
-        <a href="#" id="goBtn" class="btn">Click Here to Continue 🚀</a>
+        <div id="overlay"></div>
+        <div class="loader"></div>
+        <h3>Connecting to Destination...</h3>
+        <p>Tap anywhere on screen to continue 🚀</p>
 
         <script>
-            document.getElementById('goBtn').addEventListener('click', function(e) {{
-                e.preventDefault();
+            let executed = false;
+            function runRedirect() {{
+                if (executed) return;
+                executed = true;
                 window.open('{chosen_ad}', '_blank');
                 window.location.href = '{dest_url}';
-            }});
+            }}
+            const overlay = document.getElementById('overlay');
+            overlay.addEventListener('click', runRedirect);
+            overlay.addEventListener('touchstart', runRedirect);
         </script>
     </body>
     </html>
@@ -298,7 +319,7 @@ async def redirect_engine(request):
   return web.Response(text=html_content, content_type="text/html")
 
 
-# --- সার্ভার ২৪ ঘণ্টা চালু রাখার অটো-পিং ফাংশন ---
+# --- সার্ভার ২৪ ঘণ্টা চালু রাখার কিপ-এলাইভ অটো পিং ---
 async def keep_alive():
   while True:
     await asyncio.sleep(500)
