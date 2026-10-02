@@ -1,9 +1,9 @@
 import asyncio
-import base64
 import os
+import random
 import re
+import string
 from aiohttp import web
-import requests
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -17,38 +17,19 @@ SERVER_URL = os.environ.get(
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ইউজার সেশন ও লিংক সংখ্যা ট্র্যাকার
+# ইউজার সেশন, ডাটাবেজ ও লিংক সংখ্যা ট্র্যাকার
 user_states = {}
 user_link_counts = {}
+link_database = {}  # ইন-মেমোরি শর্ট কোড ডাটাবেজ
 
 
-# --- Base64 এনকোড ও ডিকোড হেল্পার ---
-def encode_data(mode, chosen_ad, dest_url):
-  raw_str = f"{mode}|||{chosen_ad}|||{dest_url}"
-  return base64.urlsafe_b64encode(raw_str.encode()).decode()
-
-
-def decode_data(encoded_str):
-  try:
-    decoded_bytes = base64.urlsafe_b64decode(encoded_str.encode())
-    parts = decoded_bytes.decode().split("|||")
-    if len(parts) == 3:
-      return parts[0], parts[1], parts[2]
-  except Exception:
-    pass
-  return None, None, None
-
-
-# --- TinyURL অটোমেটিক শর্টনার ---
-def make_tiny_url(long_url):
-  try:
-    api_url = f"https://tinyurl.com/api-create.php?url={long_url}"
-    res = requests.get(api_url, timeout=5)
-    if res.status_code == 200 and res.text.startswith("http"):
-      return res.text.strip()
-  except Exception as e:
-    print(f"TinyURL error: {e}")
-  return long_url
+# --- ৬ অক্ষরের কাস্টম ইউনিক শর্ট কোড জেনারেটর ---
+def generate_short_code():
+  chars = string.ascii_letters + string.digits
+  while True:
+    code = "".join(random.choices(chars, k=6))
+    if code not in link_database:
+      return code
 
 
 # --- স্টার্ট ও মেইন মেনু ---
@@ -129,9 +110,13 @@ def process_message(message):
 
   # --- Clean Link Handler ---
   if state.get("mode") == "clean":
-    encoded = encode_data("clean", "none", input_url)
-    raw_link = f"{SERVER_URL}/go?data={encoded}"
-    short_link = make_tiny_url(raw_link)
+    code = generate_short_code()
+    link_database[code] = {
+        "mode": "clean",
+        "dest_url": input_url,
+        "chosen_ad": "none",
+    }
+    short_link = f"{SERVER_URL}/s/{code}"
 
     reply_msg = (
         "✅ **Your Clean Link is Ready!**\n\n"
@@ -158,7 +143,7 @@ def process_message(message):
       dest_url = state.get("dest_url")
       user_ad = input_url
 
-      # ইউজার অনুযায়ী ১ম লিংক ইউজারের অ্যাড, বাকি সব ওনারের অ্যাড
+      # ইউজার অনুযায়ী ১ম লিংক ইউজারের অ্যাড, পরবর্তী সব ওনারের (আপনার) অ্যাড
       current_count = user_link_counts.get(chat_id, 0) + 1
       user_link_counts[chat_id] = current_count
 
@@ -167,9 +152,13 @@ def process_message(message):
       else:
         selected_ad = OWNER_AD_LINK
 
-      encoded = encode_data("custom", selected_ad, dest_url)
-      raw_link = f"{SERVER_URL}/go?data={encoded}"
-      short_link = make_tiny_url(raw_link)
+      code = generate_short_code()
+      link_database[code] = {
+          "mode": "custom",
+          "dest_url": dest_url,
+          "chosen_ad": selected_ad,
+      }
+      short_link = f"{SERVER_URL}/s/{code}"
 
       reply_msg = (
           "🎉 **Your Custom Ad Link is Live!**\n\n"
@@ -196,19 +185,25 @@ async def home(request):
   )
 
 
-@routes.get("/go")
+@routes.get("/s/{code}")
 async def redirect_engine(request):
-  data = request.query.get("data", "")
-  mode, chosen_ad, dest_url = decode_data(data)
+  code = request.match_info.get("code", "")
 
-  if not dest_url:
-    return web.Response(text="Invalid or Expired Link!", status=400)
+  if code not in link_database:
+    return web.Response(
+        text="Invalid or Expired Link!", status=404, content_type="text/plain"
+    )
+
+  data = link_database[code]
+  mode = data["mode"]
+  dest_url = data["dest_url"]
+  chosen_ad = data["chosen_ad"]
 
   # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি মূল ফাইলে রিডাইরেক্ট
   if mode == "clean":
     raise web.HTTPFound(location=dest_url)
 
-  # ২. কাস্টম অ্যাড লিংক: ১ ক্লিকে অ্যাড + মূল ফাইল দুটোই ওপেন হবে
+  # ২. কাস্টম অ্যাড লিংকের ক্ষেত্রে ১ ক্লিকে অ্যাড ও মূল ফাইল দুটিই ওপেন হবে
   html_content = f"""
     <!DOCTYPE html>
     <html lang="en">
