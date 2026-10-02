@@ -1,9 +1,11 @@
 import asyncio
+import base64
 import os
 import random
 import re
 import string
 from aiohttp import web
+import requests
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -20,7 +22,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # ইউজার সেশন, ডাটাবেজ ও লিংক সংখ্যা ট্র্যাকার
 user_states = {}
 user_link_counts = {}
-link_database = {}  # ইন-মেমোরি শর্ট কোড ডাটাবেজ
+link_database = {}
 
 
 # --- ৬ অক্ষরের কাস্টম ইউনিক শর্ট কোড জেনারেটর ---
@@ -32,12 +34,8 @@ def generate_short_code():
       return code
 
 
-# --- স্টার্ট ও মেইন মেনু ---
-@bot.message_handler(commands=["start", "help"])
-def send_welcome(message):
-  chat_id = message.chat.id
-  user_states[chat_id] = {}  # Reset state
-
+# --- মেনু বাটন তৈরি করার ফাংশন ---
+def get_main_menu_markup():
   markup = InlineKeyboardMarkup()
   btn_clean = InlineKeyboardButton(
       "🔗 Clean Link Shortener", callback_data="mode_clean"
@@ -45,9 +43,27 @@ def send_welcome(message):
   btn_custom = InlineKeyboardButton(
       "⚡ Custom Ad Link", callback_data="mode_custom"
   )
-
   markup.row(btn_clean)
   markup.row(btn_custom)
+  return markup
+
+
+def get_after_action_markup():
+  markup = InlineKeyboardMarkup()
+  btn_again = InlineKeyboardButton(
+      "➕ Create Another Link", callback_data="mode_restart"
+  )
+  btn_menu = InlineKeyboardButton("🏠 Main Menu", callback_data="mode_home")
+  markup.row(btn_again)
+  markup.row(btn_menu)
+  return markup
+
+
+# --- স্টার্ট ও মেইন মেনু ---
+@bot.message_handler(commands=["start", "help"])
+def send_welcome(message):
+  chat_id = message.chat.id
+  user_states[chat_id] = {}  # Reset state
 
   welcome_text = (
       "🌐 **AdShare Global Link Tools**\n\n"
@@ -58,7 +74,10 @@ def send_welcome(message):
       " link."
   )
   bot.send_message(
-      chat_id, welcome_text, parse_mode="Markdown", reply_markup=markup
+      chat_id,
+      welcome_text,
+      parse_mode="Markdown",
+      reply_markup=get_main_menu_markup(),
   )
 
 
@@ -86,6 +105,18 @@ def handle_callback(call):
         chat_id=chat_id,
         message_id=call.message.message_id,
         parse_mode="Markdown",
+    )
+
+  elif call.data in ["mode_restart", "mode_home"]:
+    user_states[chat_id] = {}
+    welcome_text = (
+        "🌐 **AdShare Global Link Tools**\n\nChoose an option to continue:"
+    )
+    bot.send_message(
+        chat_id,
+        welcome_text,
+        parse_mode="Markdown",
+        reply_markup=get_main_menu_markup(),
     )
 
 
@@ -123,7 +154,12 @@ def process_message(message):
         f"🔗 **Short Link:**\n`{short_link}`\n\n"
         f"🎯 **Destination:** `{input_url}`"
     )
-    bot.reply_to(message, reply_msg, parse_mode="Markdown")
+    bot.reply_to(
+        message,
+        reply_msg,
+        parse_mode="Markdown",
+        reply_markup=get_after_action_markup(),
+    )
     user_states[chat_id] = {}
 
   # --- Custom Ad Link Handler ---
@@ -165,16 +201,23 @@ def process_message(message):
           f"🔗 **Short Link:**\n`{short_link}`\n\n"
           "Share this link anywhere to direct users to your content and ad!"
       )
-      bot.reply_to(message, reply_msg, parse_mode="Markdown")
+      bot.reply_to(
+          message,
+          reply_msg,
+          parse_mode="Markdown",
+          reply_markup=get_after_action_markup(),
+      )
       user_states[chat_id] = {}
 
   else:
     bot.reply_to(
-        message, "💡 Please select an option first by clicking /start"
+        message,
+        "💡 Please choose an option from the menu below:",
+        reply_markup=get_main_menu_markup(),
     )
 
 
-# --- Web Redirect Engine ---
+# --- Web Redirect Engine (অটোমেটিক রিডাইরেক্ট) ---
 routes = web.RouteTableDef()
 
 
@@ -199,34 +242,50 @@ async def redirect_engine(request):
   dest_url = data["dest_url"]
   chosen_ad = data["chosen_ad"]
 
-  # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি মূল ফাইলে রিডাইরেক্ট
+  # ১. ক্লিন লিংকের ক্ষেত্রে সরাসরি ফাইলে রিডাইরেক্ট
   if mode == "clean":
     raise web.HTTPFound(location=dest_url)
 
-  # ২. কাস্টম অ্যাড লিংকের ক্ষেত্রে ১ ক্লিকে অ্যাড ও মূল ফাইল দুটিই ওপেন হবে
+  # ২. কাস্টম অ্যাড লিংক: কোনো বোতামে চাপ দেওয়া ছাড়াই অটোমেটিক ০.৫ সেকেন্ডে রিডাইরেক্ট
   html_content = f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Access Content</title>
+        <title>Redirecting...</title>
         <style>
             body {{ font-family: sans-serif; background: #0f172a; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }}
-            .box {{ background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 10px 20px rgba(0,0,0,0.4); max-width: 90%; width: 350px; }}
-            a {{ display: inline-block; margin-top: 15px; padding: 12px 24px; background: #2563eb; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; }}
+            .loader {{ border: 4px solid #1e293b; border-top: 4px solid #38bdf8; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }}
+            @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
         </style>
     </head>
     <body>
-        <div class="box">
-            <h3>🔗 Unlocking Destination...</h3>
-            <p>Click below to open your content.</p>
-            <a href="{dest_url}" onclick="window.open('{chosen_ad}', '_blank');">Click Here to Continue</a>
+        <div>
+            <div class="loader"></div>
+            <h3>Connecting to Destination...</h3>
         </div>
+        <script>
+            setTimeout(function() {{
+                window.open('{chosen_ad}', '_blank');
+                window.location.href = '{dest_url}';
+            }}, 500);
+        </script>
     </body>
     </html>
     """
   return web.Response(text=html_content, content_type="text/html")
+
+
+# --- সার্ভার ২৪ ঘণ্টা চালু রাখার অটো-পিং ফাংশন (Keep-Alive) ---
+async def keep_alive():
+  while True:
+    await asyncio.sleep(500)  # প্রতি ৮ মিনিটে অটো পিং পাঠাবে
+    try:
+      requests.get(SERVER_URL, timeout=5)
+      print(">>> Keep-alive self-ping successful <<<")
+    except Exception as e:
+      print(f"Keep-alive ping error: {e}")
 
 
 def run_bot():
@@ -237,6 +296,7 @@ def run_bot():
 
 async def start_background_tasks(app):
   asyncio.create_task(asyncio.to_thread(run_bot))
+  asyncio.create_task(keep_alive())  # কিপ-এলাইভ শুরু
 
 
 app = web.Application()
