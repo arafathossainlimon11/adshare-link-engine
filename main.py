@@ -12,7 +12,7 @@ BOT_TOKEN = "8932965102:AAHQAlbYoAd6A2jP9Rw6tycTC0QxYXd-MP0"
 OWNER_AD_LINK = "https://omg10.com/4/11200499"
 
 SERVER_URL = os.environ.get(
-    "RENDER_EXTERNAL_URL", "https://anime-file-server.onrender.com"
+    "RENDER_EXTERNAL_URL", "https://adshare-link-engine.onrender.com"
 )
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -219,7 +219,7 @@ async def redirect_engine(request):
   return web.Response(text=html_content, content_type="text/html")
 
 
-async def run_bot():
+def run_bot():
   print(">>> Starting Bot... <<<")
   bot.remove_webhook()
   bot.infinity_polling()
